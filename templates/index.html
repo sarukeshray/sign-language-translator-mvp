@@ -4,88 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign Language to Text</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f0f2f5;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            color: #333;
-        }
-        h1 {
-            color: #1c1e21;
-        }
-        #button-container {
-            margin: 20px 0;
-        }
-        button {
-            padding: 12px 24px;
-            font-size: 16px;
-            margin: 0 10px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            background-color: #007bff;
-            color: white;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        #main-content {
-            display: none; /* Hidden by default */
-            flex-direction: column;
-            align-items: center;
-        }
-        #video-container {
-            border: 3px solid #ccc;
-            border-radius: 8px;
-            width: 640px;
-            height: 480px;
-            background-color: #000;
-            position: relative;
-        }
-        video {
-            width: 100%;
-            height: 100%;
-            border-radius: 6px;
-            transform: scaleX(-1); /* Flip video horizontally */
-        }
-        #result-box {
-            margin-top: 20px;
-            padding: 15px;
-            width: 600px;
-            min-height: 50px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            background-color: #ffffff;
-            text-align: center;
-            font-size: 24px;
-            font-weight: bold;
-            color: #1c1e21;
-        }
-        footer {
-            position: absolute;
-            bottom: 10px;
-            text-align: center;
-            font-size: 14px;
-            color: #606770;
-        }
+        /* CSS styles remain the same */
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #333; }
+        h1 { color: #1c1e21; }
+        #button-container { margin: 20px 0; }
+        button { padding: 12px 24px; font-size: 16px; margin: 0 10px; border: none; border-radius: 8px; cursor: pointer; background-color: #007bff; color: white; transition: background-color 0.3s; }
+        button:hover { background-color: #0056b3; }
+        #main-content { display: none; flex-direction: column; align-items: center; }
+        #video-container { border: 3px solid #ccc; border-radius: 8px; width: 640px; height: 480px; background-color: #000; }
+        video { width: 100%; height: 100%; border-radius: 6px; transform: scaleX(-1); }
+        #result-box { margin-top: 20px; padding: 15px; width: 600px; min-height: 50px; border: 1px solid #ddd; border-radius: 8px; background-color: #ffffff; text-align: center; font-size: 24px; font-weight: bold; }
+        footer { position: absolute; bottom: 10px; font-size: 14px; color: #606770; }
     </style>
 </head>
 <body>
-
     <h1>Sign Language to Text Converter</h1>
-
     <div id="button-container">
-        <button id="start-tamil-btn">Translate to Tamil (தமிழ்)</button>
         <button id="start-english-btn">Translate to English</button>
+        <button id="start-tamil-btn">Translate to Tamil (தமிழ்)</button>
     </div>
-
     <div id="main-content">
         <div id="video-container">
             <video id="webcam-feed" autoplay playsinline></video>
@@ -94,10 +33,86 @@
             <p id="translated-text">...</p>
         </div>
     </div>
-
     <footer>
-        <p><strong>Instructions:</strong> Choose a language to start. Position your hand clearly in the video frame.</p>
+        <p><strong>Instructions:</strong> Choose a language. Position your hand clearly in the video frame.</p>
     </footer>
 
+    <script>
+        const video = document.getElementById('webcam-feed');
+        const translatedText = document.getElementById('translated-text');
+        const mainContent = document.getElementById('main-content');
+        const socket = io();
+
+        let streamInterval;
+        let currentMode = '';
+        let lastPredictedWord = '';
+
+        // --- Core Functions ---
+        async function startStreaming(mode) {
+            if (streamInterval) clearInterval(streamInterval);
+            currentMode = mode;
+            mainContent.style.display = 'flex';
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                streamInterval = setInterval(() => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.translate(canvas.width, 0);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    socket.emit('image', canvas.toDataURL('image/jpeg'));
+                }, 150);
+            } catch (error) {
+                console.error("Error accessing webcam:", error);
+                alert("Could not access webcam.");
+            }
+        }
+
+        function speak(text, langCode) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = langCode;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        async function translateAndSpeak(englishWord) {
+            try {
+                // Use a free translation API
+                const response = await fetch(`https://api.mymemory.translated.net/get?q=${englishWord}&langpair=en|ta`);
+                const data = await response.json();
+                const tamilWord = data.responseData.translatedText;
+                
+                translatedText.innerText = tamilWord;
+                speak(tamilWord, 'ta-IN');
+            } catch (error) {
+                console.error("Translation error:", error);
+                translatedText.innerText = "Translation failed";
+            }
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('start-english-btn').addEventListener('click', () => startStreaming('english'));
+        document.getElementById('start-tamil-btn').addEventListener('click', () => startStreaming('tamil'));
+
+        // --- Socket Listener (Simplified) ---
+        socket.on('response', (data) => {
+            const newWord = data.word;
+            if (newWord && newWord !== lastPredictedWord) {
+                lastPredictedWord = newWord; // Update the last predicted word
+                
+                if (currentMode === 'english') {
+                    translatedText.innerText = newWord.toUpperCase();
+                    speak(newWord, 'en-US'); // Speak in English
+                } else if (currentMode === 'tamil') {
+                    translateAndSpeak(newWord); // Translate and speak in Tamil
+                }
+            }
+        });
+    </script>
 </body>
 </html>
