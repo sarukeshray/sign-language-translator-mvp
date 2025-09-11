@@ -1,1 +1,1 @@
-This is just a python outline (MVP) for the project 
+This is a MVP(Most Viable product) of the main project 
